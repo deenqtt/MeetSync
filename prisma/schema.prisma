@@ -1,0 +1,45 @@
+// Prisma schema for nexabrick-internal (standalone).
+// Only CCTV needs persistence; Meeting & Home Assistant are external-API + cache.
+// User exists solely for single-login auth.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Cctv {
+  id         String   @id @default(cuid())
+  name       String
+  ipAddress  String
+  port       Int
+  channel    String?
+  username   String?
+  password   String? // encrypted via lib/crypto.ts
+  resolution String?  @default("640x480")
+  framerate  Int?     @default(15)
+  bitrate    Int?     @default(1024)
+  group      String?
+  apiKey     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Dashboard {
+  id        String   @id @default(cuid())
+  type      String   @unique // "meetings" | "home-assistant"
+  layout    Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

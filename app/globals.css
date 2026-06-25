@@ -1,26 +1,163 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 9% 25%;
+    --sidebar-primary: 231 28% 25%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 9% 95%;
+    --sidebar-accent-foreground: 220 9% 15%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 21 93% 69%;
+  }
+
+  .dark {
+    --background: 231 30% 11%;       /* #121728 — deep navy, same hue as sidebar */
+    --foreground: 210 40% 98%;
+    --card: 231 26% 18%;             /* #1c2340 — card surface, lighter than page */
+    --card-foreground: 210 40% 98%;
+    --popover: 231 26% 18%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 231 30% 11%;
+    --secondary: 231 24% 23%;        /* #232b47 — hover/muted states */
+    --secondary-foreground: 210 40% 98%;
+    --muted: 231 24% 23%;
+    --muted-foreground: 215 20.2% 60%;
+    --accent: 231 24% 23%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 231 20% 27%;           /* #2e375a — visible border on navy bg */
+    --input: 231 20% 27%;
+    --ring: 212.7 26.8% 83.9%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+
+    --sidebar-background: 231 28% 25%;
+    --sidebar-foreground: 0 0% 90%;
+    --sidebar-primary: 21 93% 69%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 231 28% 31%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 231 20% 31%;
+    --sidebar-ring: 21 93% 69%;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* ── react-grid-layout + react-resizable ─────────────────────────────────── */
+.react-grid-layout { position: relative; }
+.react-grid-item {
+  transition: all 200ms ease;
+  transition-property: left, top, width, height;
+  box-sizing: border-box;
+}
+.react-grid-item.cssTransforms { transition-property: transform, width, height; }
+.react-grid-item.resizing { transition: none; z-index: 4; will-change: width, height; }
+.react-grid-item.react-draggable-dragging { transition: none; z-index: 5; will-change: transform; opacity: 0.85; }
+.react-grid-item.dropping { visibility: hidden; }
+.react-grid-item.react-grid-placeholder {
+  background: rgba(50, 174, 172, 0.12);
+  border: 2px dashed #32AEAC;
+  border-radius: 1rem;
+  z-index: 2;
+  transition-duration: 100ms;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+}
+.react-resizable { position: relative; }
+.react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+  z-index: 10;
+}
+.react-resizable-handle::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid rgba(100, 116, 139, 0.5);
+  border-bottom: 2px solid rgba(100, 116, 139, 0.5);
+  border-radius: 1px;
+}
+.dark .react-resizable-handle::after {
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+/* Typing / caret animation used by MeetilyTranscript widget */
+@keyframes typing {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+@keyframes blink-caret {
+  0%,
+  100% {
+    border-color: transparent;
+  }
+  50% {
+    border-color: #2563eb;
+  }
+}
+
+.animate-typing {
+  width: 38ch;
+  animation:
+    typing 2.5s steps(18, end),
+    blink-caret 0.75s step-end infinite;
+  white-space: nowrap;
+  overflow: hidden;
+  border-right: 2px solid #2563eb;
 }
