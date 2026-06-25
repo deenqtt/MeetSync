@@ -13,6 +13,7 @@
   <img src="https://img.shields.io/badge/Tailwind_CSS-v3-06B6D4?logo=tailwindcss&logoColor=white" />
   <img src="https://img.shields.io/badge/Prisma-PostgreSQL-2D3748?logo=prisma&logoColor=white" />
   <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" />
 </p>
 
 ---
@@ -303,4 +304,6 @@ Font: **Plus Jakarta Sans** (display) + **Inter** (body)
 
 ## 📄 Lisensi
 
-Internal use only — GSPETech / NexaBrick.
+Didistribusikan di bawah [MIT License](LICENSE).
+
+Copyright (c) 2026 GSPETech
