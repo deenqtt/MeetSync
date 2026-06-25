@@ -27,19 +27,18 @@ import {
   Map,
   Plus,
   Circle,
-  Wifi,
-  WifiOff,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface RtspCamera {
   id: string;
-  camera_name: string;
-  rtsp_url: string;
-  status: string;
-  created_at: string;
-  updated_at?: string;
+  name: string;
+  ipAddress: string;
+  port: number;
+  channel?: string | null;
+  username?: string | null;
+  createdAt: string;
 }
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
@@ -194,20 +193,20 @@ export default function CctvPage() {
   const [cameraToDelete, setCameraToDelete] = useState<RtspCamera | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formData, setFormData] = useState({ name: "", rtspUrl: "" });
+  const [formData, setFormData] = useState({ name: "", ipAddress: "", port: "554", channel: "", username: "", password: "" });
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchWithTimeout(`/api/ai-proxy/api/cameras`);
-      if (res?.ok) {
+      const res = await fetch(`/api/cctv`);
+      if (res.ok) {
         const data = await res.json();
-        setCameras(Array.isArray(data?.cameras) ? data.cameras : []);
+        setCameras(Array.isArray(data?.data) ? data.data : []);
       } else {
         setCameras([]);
       }
     } catch {
-      showToast.error("Network error", "Could not reach AI service");
+      showToast.error("Network error", "Could not load cameras");
       setCameras([]);
     } finally {
       setLoading(false);
@@ -217,28 +216,32 @@ export default function CctvPage() {
   useEffect(() => { load(); }, [load]);
 
   const filtered = cameras.filter(
-    (c) => !search || c.camera_name.toLowerCase().includes(search.toLowerCase()),
+    (c) => !search || c.name.toLowerCase().includes(search.toLowerCase()),
   );
 
-  const liveCount = cameras.filter((c) => c.status === "active").length;
-  const offlineCount = cameras.length - liveCount;
-
   const handleAdd = async () => {
-    if (!formData.name.trim() || !formData.rtspUrl.trim()) {
-      showToast.error("Validation error", "Name and RTSP URL are required");
+    if (!formData.name.trim() || !formData.ipAddress.trim() || !formData.port.trim()) {
+      showToast.error("Validation error", "Name, IP Address, and Port are required");
       return;
     }
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/ai-proxy/api/cameras`, {
+      const res = await fetch(`/api/cctv`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ camera_name: formData.name, rtsp_url: formData.rtspUrl }),
+        body: JSON.stringify({
+          name: formData.name.trim(),
+          ipAddress: formData.ipAddress.trim(),
+          port: Number(formData.port),
+          channel: formData.channel.trim() || null,
+          username: formData.username.trim() || null,
+          password: formData.password.trim() || null,
+        }),
       });
       if (!res.ok) throw new Error("Failed to add camera");
       showToast.success("Camera added");
       setAddOpen(false);
-      setFormData({ name: "", rtspUrl: "" });
+      setFormData({ name: "", ipAddress: "", port: "554", channel: "", username: "", password: "" });
       load();
     } catch (e: any) {
       showToast.error("Failed to add camera", e.message);
@@ -252,9 +255,9 @@ export default function CctvPage() {
     const cam = cameraToDelete;
     setCameraToDelete(null);
     try {
-      const res = await fetch(`/api/ai-proxy/api/cameras/${cam.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/cctv/${cam.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete camera");
-      showToast.success(`Camera "${cam.camera_name}" deleted`);
+      showToast.success(`Camera "${cam.name}" deleted`);
       load();
     } catch (e: any) {
       showToast.error("Failed to delete camera", e.message);
@@ -310,8 +313,8 @@ export default function CctvPage() {
         <div className="grid grid-cols-3 gap-3">
           {[
             { label: "Total", count: cameras.length, color: TOKEN.navy },
-            { label: "Live", count: liveCount, color: TOKEN.teal },
-            { label: "Offline", count: offlineCount, color: "#EF4444" },
+            { label: "Configured", count: cameras.length, color: TOKEN.teal },
+            { label: "No AI Service", count: 0, color: "#EF4444" },
           ].map(({ label, count, color }) => (
             <div
               key={label}
@@ -399,40 +402,30 @@ export default function CctvPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((camera) => {
-              const isActive = camera.status === "active";
-              return (
+            {filtered.map((camera) => (
                 <div
                   key={camera.id}
                   className="bg-white dark:bg-card rounded-2xl border border-gray-100 dark:border-border shadow-sm overflow-hidden flex flex-col"
                 >
-                  <RtspStreamPlayer cameraId={camera.id} name={camera.camera_name} />
+                  <RtspStreamPlayer cameraId={camera.id} name={camera.name} />
 
                   {/* Info bar */}
                   <div className="px-4 py-3 flex flex-col gap-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold text-[14px] text-gray-900 dark:text-white truncate">
-                          {camera.camera_name}
+                          {camera.name}
                         </p>
                         <p className="text-[11px] font-mono text-gray-400 dark:text-gray-500 truncate mt-0.5">
-                          {camera.rtsp_url}
+                          {camera.ipAddress}:{camera.port}{camera.channel ? `/${camera.channel}` : ""}
                         </p>
                       </div>
                       <div
                         className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full mt-0.5"
-                        style={
-                          isActive
-                            ? { backgroundColor: TOKEN.teal + "18", color: TOKEN.teal, border: `1px solid ${TOKEN.teal}44` }
-                            : { backgroundColor: "#EF444418", color: "#EF4444", border: "1px solid #EF444444" }
-                        }
+                        style={{ backgroundColor: TOKEN.teal + "18", color: TOKEN.teal, border: `1px solid ${TOKEN.teal}44` }}
                       >
-                        {isActive ? (
-                          <Wifi className="h-2.5 w-2.5" />
-                        ) : (
-                          <WifiOff className="h-2.5 w-2.5" />
-                        )}
-                        {isActive ? "Live" : "Offline"}
+                        <Circle className="h-2 w-2 fill-current" />
+                        Configured
                       </div>
                     </div>
 
@@ -459,8 +452,7 @@ export default function CctvPage() {
                     </div>
                   </div>
                 </div>
-              );
-            })}
+            ))}
           </div>
         )}
       </div>
@@ -477,7 +469,7 @@ export default function CctvPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="space-y-3 py-2">
             <div className="space-y-1.5">
               <Label className="text-[12.5px] font-semibold text-gray-600 dark:text-gray-400">
                 Camera Name <span className="text-red-500">*</span>
@@ -491,26 +483,68 @@ export default function CctvPage() {
               />
             </div>
 
+            <div className="flex gap-2">
+              <div className="space-y-1.5 flex-1">
+                <Label className="text-[12.5px] font-semibold text-gray-600 dark:text-gray-400">
+                  IP Address <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  value={formData.ipAddress}
+                  onChange={(e) => setFormData({ ...formData, ipAddress: e.target.value })}
+                  placeholder="192.168.1.x"
+                  className="h-10 rounded-xl border-gray-200 dark:border-border bg-white dark:bg-card text-gray-900 dark:text-white font-mono text-[13px]"
+                />
+              </div>
+              <div className="space-y-1.5 w-24">
+                <Label className="text-[12.5px] font-semibold text-gray-600 dark:text-gray-400">
+                  Port <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  value={formData.port}
+                  onChange={(e) => setFormData({ ...formData, port: e.target.value })}
+                  placeholder="554"
+                  className="h-10 rounded-xl border-gray-200 dark:border-border bg-white dark:bg-card text-gray-900 dark:text-white font-mono text-[13px]"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <div className="space-y-1.5 flex-1">
+                <Label className="text-[12.5px] font-semibold text-gray-600 dark:text-gray-400">Username</Label>
+                <Input
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  placeholder="admin"
+                  className="h-10 rounded-xl border-gray-200 dark:border-border bg-white dark:bg-card text-gray-900 dark:text-white"
+                />
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <Label className="text-[12.5px] font-semibold text-gray-600 dark:text-gray-400">Password</Label>
+                <Input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="••••••"
+                  className="h-10 rounded-xl border-gray-200 dark:border-border bg-white dark:bg-card text-gray-900 dark:text-white"
+                />
+              </div>
+            </div>
+
             <div className="space-y-1.5">
-              <Label className="text-[12.5px] font-semibold text-gray-600 dark:text-gray-400">
-                RTSP URL <span className="text-red-500">*</span>
-              </Label>
+              <Label className="text-[12.5px] font-semibold text-gray-600 dark:text-gray-400">Channel / Stream path</Label>
               <Input
-                value={formData.rtspUrl}
-                onChange={(e) => setFormData({ ...formData, rtspUrl: e.target.value })}
-                placeholder="rtsp://user:pass@192.168.1.x:554/stream"
+                value={formData.channel}
+                onChange={(e) => setFormData({ ...formData, channel: e.target.value })}
+                placeholder="e.g. stream1 or ch01"
                 className="h-10 rounded-xl border-gray-200 dark:border-border bg-white dark:bg-card text-gray-900 dark:text-white font-mono text-[13px]"
               />
-              <p className="text-[11px] text-gray-400 dark:text-gray-500">
-                Streamed via AI service on port {process.env.NEXT_PUBLIC_AI_SERVICE_PORT || "8567"}
-              </p>
             </div>
           </div>
 
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
-              onClick={() => { setAddOpen(false); setFormData({ name: "", rtspUrl: "" }); }}
+              onClick={() => { setAddOpen(false); setFormData({ name: "", ipAddress: "", port: "554", channel: "", username: "", password: "" }); }}
               className="border-gray-200 dark:border-border"
             >
               Cancel
@@ -533,7 +567,7 @@ export default function CctvPage() {
         onOpenChange={(open) => { if (!open) setCameraToDelete(null); }}
         type="destructive"
         title="Delete Camera"
-        description={`Remove "${cameraToDelete?.camera_name}"? This cannot be undone.`}
+        description={`Remove "${cameraToDelete?.name}"? This cannot be undone.`}
         confirmText="Delete Camera"
         cancelText="Cancel"
         onConfirm={handleDelete}
