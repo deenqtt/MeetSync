@@ -126,8 +126,8 @@ export const AiCctvSnapshotsWidget = ({ config, isEditMode = false }: Props) => 
         const fetchClips = async () => {
             if (fetchStatus !== "ok") setFetchStatus("loading");
             try {
-                const aiBase = getAiServiceBaseUrl();
-                const url = new URL(`${aiBase}/api/clips`);
+                const base = typeof window !== "undefined" ? window.location.origin : "";
+                const url = new URL(`/api/ai-proxy/api/clips`, base);
                 if (!isAllMode && activeMeetingId) {
                     url.searchParams.append("meeting_id", activeMeetingId);
                 }
