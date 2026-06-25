@@ -435,7 +435,7 @@ export default function CctvPage() {
                         size="sm"
                         className="flex-1 h-7 text-[11px] gap-1 border-gray-200 dark:border-border text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
                         onClick={() =>
-                          router.push(`/security/surveillance-cctv/manage-zone?cameraId=${camera.id}`)
+                          router.push(`/security/surveillance-cctv/manage-zone`)
                         }
                       >
                         <Map className="h-3 w-3" />

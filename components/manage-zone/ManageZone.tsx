@@ -1,28 +1,32 @@
-/**
- * ManageZone.tsx
- * Zone editor component for Dashboard Production (NexaBrick-WebApps).
- *
- * Usage:
- *   <ManageZone apiBase="http://192.168.2.132:8567" />
- *
- * Dependencies: react, axios
- * No other external dependencies required.
- *
- * API endpoints used:
- *   GET  /api/cameras                                 — list cameras
- *   GET  /api/cameras/{id}/snapshot                   — camera JPEG snapshot
- *   GET  /api/cameras/{id}/zones                      — list zones
- *   POST /api/cameras/{id}/zones                      — create zone
- *   PUT  /api/cameras/{id}/zones/{zone_id}            — update zone (optional)
- *   DELETE /api/cameras/{id}/zones/{zone_id}          — delete zone
- */
+"use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import axios from "axios";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Camera,
+  RefreshCw,
+  X,
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  AlertCircle,
+  Map,
+} from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface Camera {
+interface AiCamera {
   id: string;
   camera_name: string;
   rtsp_url: string;
@@ -31,43 +35,33 @@ interface Camera {
 interface Zone {
   id: string;
   name: string;
-  points: [number, number][]; // normalized 0.0–1.0
+  points: [number, number][];
   color: string;
   created_at: string;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const CLOSE_RADIUS = 10; // px to snap-close polygon
+const CLOSE_RADIUS = 10;
 const PRESET_COLORS = [
   "#3b82f6",
-  "#22c55e",
+  "#32AEAC",
   "#f59e0b",
   "#ef4444",
   "#a855f7",
-  "#06b6d4",
+  "#FA9464",
 ];
 
-// ── Helper: normalize canvas coords ──────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function toNorm(
-  px: number,
-  py: number,
-  canvas: HTMLCanvasElement,
-): [number, number] {
+function toNorm(px: number, py: number, canvas: HTMLCanvasElement): [number, number] {
   if (canvas.width === 0 || canvas.height === 0) return [0, 0];
   return [px / canvas.width, py / canvas.height];
 }
 
-function toPx(
-  nx: number,
-  ny: number,
-  canvas: HTMLCanvasElement,
-): [number, number] {
+function toPx(nx: number, ny: number, canvas: HTMLCanvasElement): [number, number] {
   return [nx * canvas.width, ny * canvas.height];
 }
-
-// ── Drawing helpers ───────────────────────────────────────────────────────────
 
 function drawPolygon(
   ctx: CanvasRenderingContext2D,
@@ -123,44 +117,37 @@ function drawLabel(
   ctx.restore();
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Props ─────────────────────────────────────────────────────────────────────
 
 interface ManageZoneProps {
-  /** Base URL of backend-integration-api, e.g. "http://192.168.2.132:8567" */
-  apiBase?: string;
-  /** If provided, skip camera selector and auto-select this camera */
   cameraId?: string;
 }
 
-const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initialCameraId }) => {
-  const api = axios.create({ baseURL: apiBase });
-  const fixedCamera = !!initialCameraId; // true = camera sudah ditentukan, sembunyikan selector
+// ── Component ─────────────────────────────────────────────────────────────────
 
-  // DOM refs
+const ManageZone: React.FC<ManageZoneProps> = ({ cameraId: initialCameraId }) => {
+  const fixedCamera = !!initialCameraId;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  // Camera list
-  const [cameras, setCameras] = useState<Camera[]>([]);
-  const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
+  const [cameras, setCameras] = useState<AiCamera[]>([]);
+  const [selectedCamera, setSelectedCamera] = useState<AiCamera | null>(null);
+  const [aiServiceError, setAiServiceError] = useState(false);
 
-  // Snapshot
   const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [snapshotError, setSnapshotError] = useState("");
 
-  // Zones
   const [zones, setZones] = useState<Zone[]>([]);
 
-  // Drawing state
   const [isDrawing, setIsDrawing] = useState(false);
   const drawingPointsRef = useRef<[number, number][]>([]);
   const mousePosRef = useRef({ x: 0, y: 0 });
   const hoveredFirstPtRef = useRef(false);
 
-  // Name modal
   const [nameModalOpen, setNameModalOpen] = useState(false);
   const pendingPointsRef = useRef<[number, number][] | null>(null);
   const [newZoneName, setNewZoneName] = useState("");
@@ -168,10 +155,9 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
   const [modalError, setModalError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Delete modal
   const [deleteTarget, setDeleteTarget] = useState<Zone | null>(null);
 
-  // ── Canvas redraw ───────────────────────────────────────────────────────────
+  // ── Canvas ────────────────────────────────────────────────────────────────
 
   const redrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -179,19 +165,16 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Committed zones
     for (const z of zones) {
       if (z.points.length < 3) continue;
       drawPolygon(ctx, z.points, z.color, true, canvas);
       drawLabel(ctx, z.points, z.name, canvas);
     }
 
-    // In-progress polygon
     const pts = drawingPointsRef.current;
     if (pts.length > 0) {
       drawPolygon(ctx, pts, "#f59e0b", false, canvas);
 
-      // Ghost segment to cursor
       const [lx, ly] = toPx(...pts[pts.length - 1], canvas);
       ctx.save();
       ctx.setLineDash([4, 4]);
@@ -204,7 +187,6 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
       ctx.stroke();
       ctx.restore();
 
-      // Snap ring on first point
       if (hoveredFirstPtRef.current && pts.length >= 3) {
         const [fx, fy] = toPx(...pts[0], canvas);
         ctx.save();
@@ -218,8 +200,6 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
     }
   }, [zones]);
 
-  // ── Resize canvas to match container ───────────────────────────────────────
-
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -228,37 +208,61 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
     redrawCanvas();
   }, [redrawCanvas]);
 
-  // ── Fetch cameras ───────────────────────────────────────────────────────────
+  // ── API helpers ───────────────────────────────────────────────────────────
+
+  async function fetchZones(camId: string) {
+    try {
+      const res = await fetch(`/api/ai-proxy/api/cameras/${camId}/zones`);
+      if (res.ok) {
+        const data = await res.json();
+        setZones(Array.isArray(data) ? data : []);
+      } else {
+        setZones([]);
+      }
+    } catch {
+      setZones([]);
+    }
+  }
+
+  async function fetchSnapshot(camId: string) {
+    setSnapshotLoading(true);
+    setSnapshotError("");
+    setSnapshotUrl(null);
+    await new Promise((r) => setTimeout(r, 50));
+    setSnapshotUrl(`/api/ai-proxy/api/cameras/${camId}/snapshot?t=${Date.now()}`);
+    setSnapshotLoading(false);
+  }
+
+  // ── Effects ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    api
-      .get<{ cameras: Camera[] }>("/api/cameras")
-      .then(({ data }) => {
-        const list = data.cameras ?? [];
-        setCameras(list);
-        // Auto-select jika cameraId sudah ditentukan dari luar
-        if (initialCameraId) {
-          const cam = list.find((c) => c.id === initialCameraId);
-          if (cam) {
-            setSelectedCamera(cam);
-            fetchZones(cam.id);
-            fetchSnapshot(cam.id);
-          }
-        }
-      })
-      .catch(() => setCameras([]));
+    if (fixedCamera) {
+      // cameraId from DB passed; zones + snapshot via AI proxy using same ID
+      fetchZones(initialCameraId!);
+      fetchSnapshot(initialCameraId!);
+    } else {
+      fetch("/api/ai-proxy/api/cameras")
+        .then((r) => {
+          if (!r.ok) throw new Error("unreachable");
+          return r.json();
+        })
+        .then((data) => {
+          const list: AiCamera[] = data.cameras ?? [];
+          setCameras(list);
+        })
+        .catch(() => {
+          setCameras([]);
+          setAiServiceError(true);
+        });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCameraId]);
-
-  // ── ResizeObserver ──────────────────────────────────────────────────────────
 
   useEffect(() => {
     const obs = new ResizeObserver(() => resizeCanvas());
     if (containerRef.current) obs.observe(containerRef.current);
     return () => obs.disconnect();
   }, [resizeCanvas]);
-
-  // ── Keyboard ESC ───────────────────────────────────────────────────────────
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -268,15 +272,13 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // ── Redraw when zones change ────────────────────────────────────────────────
-
   useEffect(() => {
     redrawCanvas();
   }, [zones, redrawCanvas]);
 
-  // ── Camera selection ────────────────────────────────────────────────────────
+  // ── Camera selection ──────────────────────────────────────────────────────
 
-  async function selectCamera(cam: Camera) {
+  async function selectCamera(cam: AiCamera) {
     if (selectedCamera?.id === cam.id) return;
     cancelDraw();
     setSelectedCamera(cam);
@@ -286,36 +288,17 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
     await Promise.all([fetchZones(cam.id), fetchSnapshot(cam.id)]);
   }
 
-  async function fetchZones(cameraId: string) {
-    try {
-      const { data } = await api.get<Zone[]>(`/api/cameras/${cameraId}/zones`);
-      setZones(data);
-    } catch {
-      setZones([]);
-    }
-  }
-
-  async function fetchSnapshot(cameraId: string) {
-    setSnapshotLoading(true);
-    setSnapshotError("");
-    setSnapshotUrl(null);
-    // Small delay so loading state renders before URL set
-    await new Promise((r) => setTimeout(r, 50));
-    setSnapshotUrl(
-      `${apiBase}/api/cameras/${cameraId}/snapshot?t=${Date.now()}`,
-    );
-    setSnapshotLoading(false);
-  }
-
   async function refreshSnapshot() {
-    if (!selectedCamera) return;
-    await fetchSnapshot(selectedCamera.id);
+    const camId = fixedCamera ? initialCameraId! : selectedCamera?.id;
+    if (!camId) return;
+    await fetchSnapshot(camId);
   }
 
-  // ── Drawing ─────────────────────────────────────────────────────────────────
+  // ── Drawing ───────────────────────────────────────────────────────────────
 
   function startDraw() {
-    if (!selectedCamera) return;
+    const camId = fixedCamera ? initialCameraId : selectedCamera?.id;
+    if (!camId) return;
     drawingPointsRef.current = [];
     hoveredFirstPtRef.current = false;
     setIsDrawing(true);
@@ -357,8 +340,7 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
     if (pts.length >= 3) {
       const [fx, fy] = toPx(...pts[0], canvas);
       hoveredFirstPtRef.current =
-        Math.hypot(mousePosRef.current.x - fx, mousePosRef.current.y - fy) <
-        CLOSE_RADIUS;
+        Math.hypot(mousePosRef.current.x - fx, mousePosRef.current.y - fy) < CLOSE_RADIUS;
     } else {
       hoveredFirstPtRef.current = false;
     }
@@ -372,7 +354,6 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
 
   function onCanvasDoubleClick() {
     if (!isDrawing || drawingPointsRef.current.length < 3) return;
-    // Browser fires click before dblclick — remove the duplicate last point
     drawingPointsRef.current = drawingPointsRef.current.slice(0, -1);
     if (drawingPointsRef.current.length >= 3) finishPolygon();
   }
@@ -391,7 +372,7 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
     redrawCanvas();
   }
 
-  // ── Zone save ────────────────────────────────────────────────────────────────
+  // ── Zone save ─────────────────────────────────────────────────────────────
 
   async function saveZone() {
     setModalError("");
@@ -399,21 +380,26 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
       setModalError("Zone name is required.");
       return;
     }
+    const camId = fixedCamera ? initialCameraId! : selectedCamera?.id;
+    if (!camId) return;
     setSaving(true);
     try {
-      const { data } = await api.post<Zone>(
-        `/api/cameras/${selectedCamera!.id}/zones`,
-        {
+      const res = await fetch(`/api/ai-proxy/api/cameras/${camId}/zones`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           name: newZoneName.trim(),
           points: pendingPointsRef.current,
           color: newZoneColor,
-        },
-      );
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to save zone");
+      const data: Zone = await res.json();
       setZones((prev) => [...prev, data]);
       setNameModalOpen(false);
       pendingPointsRef.current = null;
     } catch (e: any) {
-      setModalError(e?.response?.data?.detail ?? "Failed to save zone.");
+      setModalError(e.message ?? "Failed to save zone.");
     } finally {
       setSaving(false);
     }
@@ -425,15 +411,17 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
     redrawCanvas();
   }
 
-  // ── Zone delete ──────────────────────────────────────────────────────────────
+  // ── Zone delete ───────────────────────────────────────────────────────────
 
   async function doDelete() {
     if (!deleteTarget) return;
+    const camId = fixedCamera ? initialCameraId! : selectedCamera?.id;
+    if (!camId) return;
     setSaving(true);
     try {
-      await api.delete(
-        `/api/cameras/${selectedCamera!.id}/zones/${deleteTarget.id}`,
-      );
+      await fetch(`/api/ai-proxy/api/cameras/${camId}/zones/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
       setZones((prev) => prev.filter((z) => z.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch {
@@ -443,49 +431,77 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // ── Derived ───────────────────────────────────────────────────────────────
+
+  const hasCamera = fixedCamera || !!selectedCamera;
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={styles.root}>
-      {/* ── Left: canvas editor ─── */}
-      <div style={styles.editorPanel}>
-        {/* Header editor */}
-        <div style={styles.editorHeader}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={styles.editorTitle}>
+    <div className="flex gap-5 items-start" style={{ fontFamily: "var(--font-jakarta), var(--font-inter), sans-serif" }}>
+
+      {/* Left: canvas editor */}
+      <div className="flex-1 min-w-0 flex flex-col gap-3">
+
+        {/* Editor header */}
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[15px] font-semibold text-gray-900 dark:text-white leading-snug">
               {selectedCamera ? selectedCamera.camera_name : "Zone Editor"}
             </span>
-            {selectedCamera && (
-              <span style={styles.editorSubtitle}>
+            {hasCamera && (
+              <span className="text-[11px] text-gray-400 dark:text-gray-500">
                 {zones.length} zone{zones.length !== 1 ? "s" : ""} configured
               </span>
             )}
           </div>
-          <div style={styles.editorActions}>
+          <div className="flex items-center gap-2">
             {isDrawing ? (
-              <button style={styles.btnDanger} onClick={cancelDraw}>
-                ✕ Cancel
-              </button>
-            ) : selectedCamera ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={cancelDraw}
+                className="border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-400/10 h-8 text-[12.5px]"
+              >
+                <X className="h-3.5 w-3.5 mr-1" />
+                Cancel
+              </Button>
+            ) : hasCamera ? (
               <>
-                <button style={styles.btnGhost} onClick={refreshSnapshot}>
-                  ↺ Refresh
-                </button>
-                <button style={styles.btnPrimary} onClick={startDraw}>
-                  + Draw Zone
-                </button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={refreshSnapshot}
+                  className="border-gray-200 dark:border-border text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 h-8 text-[12.5px]"
+                >
+                  <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                  Refresh
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={startDraw}
+                  className="h-8 text-[12.5px] font-semibold shadow-sm"
+                  style={{ background: "linear-gradient(135deg, #2D3250 0%, #3d4a72 100%)" }}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Draw Zone
+                </Button>
               </>
             ) : null}
           </div>
         </div>
 
         {/* Canvas area */}
-        <div ref={containerRef} style={styles.canvasWrap}>
+        <div
+          ref={containerRef}
+          className="relative w-full bg-gray-950 dark:bg-gray-950 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800"
+          style={{ aspectRatio: "16 / 9" }}
+        >
           {snapshotUrl && (
             <img
               ref={imgRef}
               src={snapshotUrl}
-              style={styles.snapshotImg}
+              className="w-full h-full object-contain block select-none pointer-events-none"
               draggable={false}
               onLoad={resizeCanvas}
               onError={() => setSnapshotError("Failed to load snapshot")}
@@ -493,531 +509,256 @@ const ManageZone: React.FC<ManageZoneProps> = ({ apiBase = "", cameraId: initial
             />
           )}
           {!snapshotUrl && (
-            <div style={styles.canvasPlaceholder}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 32, opacity: 0.3 }}>📷</span>
-                <span style={styles.placeholderText}>
-                  {snapshotLoading
-                    ? "Loading snapshot…"
-                    : !selectedCamera
-                      ? "Select a camera to begin"
-                      : snapshotError
-                        ? snapshotError
-                        : "No snapshot available"}
-                </span>
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                {snapshotLoading ? (
+                  <>
+                    <Loader2 className="h-8 w-8 text-gray-600 animate-spin" />
+                    <span className="text-[13px] text-gray-500">Loading snapshot...</span>
+                  </>
+                ) : snapshotError ? (
+                  <>
+                    <AlertCircle className="h-8 w-8 text-red-500/40" />
+                    <span className="text-[13px] text-red-400">{snapshotError}</span>
+                  </>
+                ) : (
+                  <>
+                    <Camera className="h-10 w-10 text-gray-700" />
+                    <span className="text-[13px] text-gray-500">
+                      {aiServiceError ? "AI service not running" : !hasCamera ? "Select a camera to begin" : "No snapshot available"}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           )}
           <canvas
             ref={canvasRef}
-            style={{
-              ...styles.zoneCanvas,
-              cursor: isDrawing ? "crosshair" : "default",
-            }}
+            className="absolute inset-0 w-full h-full"
+            style={{ cursor: isDrawing ? "crosshair" : "default" }}
             onClick={onCanvasClick}
             onMouseMove={onCanvasMouseMove}
             onMouseLeave={onCanvasMouseLeave}
             onDoubleClick={onCanvasDoubleClick}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              cancelDraw();
-            }}
+            onContextMenu={(e) => { e.preventDefault(); cancelDraw(); }}
           />
-          {/* Drawing mode overlay badge */}
           {isDrawing && (
-            <div style={styles.drawingBadge}>
-              ✏️ Drawing Mode
+            <div className="absolute top-3 right-3 inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full"
+              style={{ background: "rgba(245,158,11,0.15)", border: "1px solid #f59e0b", color: "#f59e0b", letterSpacing: "0.04em" }}>
+              <Pencil className="h-3 w-3" />
+              Drawing Mode
             </div>
           )}
         </div>
 
         {/* Drawing hint */}
-        <div style={styles.drawHint}>
+        <p className="text-[12px] text-gray-400 dark:text-gray-500 px-0.5">
           {isDrawing ? (
-            <span style={styles.hintActive}>
+            <span style={{ color: "#f59e0b" }}>
               Click to add points · Click first point or double-click to close · Right-click or ESC to cancel
             </span>
-          ) : selectedCamera ? (
-            <span>
-              Click <strong style={{ color: "#94a3b8" }}>Draw Zone</strong> then click on the image to mark polygon zones.
-            </span>
+          ) : hasCamera ? (
+            <>Click <strong className="text-gray-600 dark:text-gray-300">Draw Zone</strong> then click on the image to mark polygon zones.</>
           ) : (
-            <span>Select a camera from the list to start editing zones.</span>
+            "Select a camera from the list to start editing zones."
           )}
-        </div>
+        </p>
       </div>
 
-      {/* ── Right: sidebar ─── */}
-      <div style={styles.sidebarPanel}>
-        {/* Camera list — hanya tampil kalau tidak di-fix dari luar */}
+      {/* Right: sidebar */}
+      <div className="w-56 shrink-0 flex flex-col gap-4">
+
+        {/* Camera list — only when not fixed */}
         {!fixedCamera && (
-          <div style={styles.sidebarSection}>
-            <div style={styles.sectionLabel}>Cameras</div>
-            {cameras.length === 0 && (
-              <span style={styles.emptyText}>No cameras configured.</span>
-            )}
-            {cameras.map((cam) => (
+          <div className="bg-white dark:bg-card rounded-2xl border border-gray-100 dark:border-border p-4 flex flex-col gap-1.5">
+            <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500 mb-2">
+              Cameras
+            </p>
+            {aiServiceError ? (
+              <div className="flex flex-col gap-1.5 py-2">
+                <div className="flex items-center gap-1.5 text-red-500">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  <span className="text-[12px] font-medium">AI service offline</span>
+                </div>
+                <span className="text-[11px] text-gray-400 dark:text-gray-500 leading-snug">
+                  Zone management requires the AI service running on port {process.env.NEXT_PUBLIC_AI_SERVICE_PORT || "8567"}.
+                </span>
+              </div>
+            ) : cameras.length === 0 ? (
+              <span className="text-[12px] text-gray-400 dark:text-gray-500 py-1">No cameras configured.</span>
+            ) : cameras.map((cam) => (
               <button
                 key={cam.id}
-                style={{
-                  ...styles.camItem,
-                  ...(selectedCamera?.id === cam.id ? styles.camItemActive : {}),
-                }}
                 onClick={() => selectCamera(cam)}
+                className={`flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[13px] text-left transition-colors ${
+                  selectedCamera?.id === cam.id
+                    ? "text-white font-medium"
+                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                }`}
+                style={selectedCamera?.id === cam.id ? { background: "linear-gradient(135deg, #2D3250 0%, #3d4a72 100%)" } : {}}
               >
                 <span
-                  style={{
-                    ...styles.camDot,
-                    ...(selectedCamera?.id === cam.id ? styles.camDotActive : {}),
-                  }}
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ background: selectedCamera?.id === cam.id ? "#93c5fd" : "#94a3b8" }}
                 />
-                <span style={styles.camName}>{cam.camera_name}</span>
+                <span className="truncate">{cam.camera_name}</span>
               </button>
             ))}
           </div>
         )}
 
         {/* Zone list */}
-        <div style={styles.sidebarSection}>
-          <div style={styles.sectionLabel}>
-            Zones <span style={styles.zoneCount}>{zones.length}</span>
-          </div>
-          {!selectedCamera ? (
-            <span style={styles.emptyText}>Select a camera first.</span>
-          ) : zones.length === 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "12px 0" }}>
-              <span style={{ fontSize: 24, opacity: 0.3 }}>🗺️</span>
-              <span style={styles.emptyText}>No zones yet.</span>
-              <span style={{ fontSize: 11, color: "#334155", textAlign: "center" }}>
-                Click "Draw Zone" to start
+        <div className="bg-white dark:bg-card rounded-2xl border border-gray-100 dark:border-border p-4 flex flex-col gap-1.5">
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
+              Zones
+            </p>
+            {zones.length > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+                {zones.length}
               </span>
+            )}
+          </div>
+
+          {!hasCamera ? (
+            <span className="text-[12px] text-gray-400 dark:text-gray-500 py-1">Select a camera first.</span>
+          ) : zones.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-4">
+              <Map className="h-6 w-6 text-gray-300 dark:text-gray-600" />
+              <span className="text-[12px] text-gray-400 dark:text-gray-500">No zones yet.</span>
+              <span className="text-[11px] text-gray-400 dark:text-gray-600 text-center">Click "Draw Zone" to start</span>
             </div>
-          ) : (
-            zones.map((z) => (
-              <div key={z.id} style={styles.zoneItem}>
-                <span style={{ ...styles.zoneSwatch, background: z.color }} />
-                <span style={styles.zoneNameText}>{z.name}</span>
-                <button
-                  style={styles.zoneDel}
-                  onClick={() => setDeleteTarget(z)}
-                  title="Delete zone"
-                >
-                  ✕
-                </button>
-              </div>
-            ))
-          )}
+          ) : zones.map((z) => (
+            <div key={z.id} className="flex items-center gap-2 px-1 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 group">
+              <span
+                className="w-2.5 h-2.5 rounded-sm shrink-0"
+                style={{ background: z.color }}
+              />
+              <span className="flex-1 text-[13px] text-gray-700 dark:text-gray-300 truncate">{z.name}</span>
+              <button
+                onClick={() => setDeleteTarget(z)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-red-500 dark:hover:text-red-400 p-0.5 rounded"
+                title="Delete zone"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* ── Name zone modal ─── */}
-      {nameModalOpen && (
-        <div
-          style={styles.modalBackdrop}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) cancelNameModal();
-          }}
-        >
-          <div style={styles.modal}>
-            <div style={styles.modalTitle}>Name this zone</div>
-            <div style={styles.modalBody}>
-              <label style={styles.fieldLabel}>Zone name</label>
-              <input
+      {/* Name zone dialog */}
+      <Dialog open={nameModalOpen} onOpenChange={(open) => { if (!open) cancelNameModal(); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-[16px] font-bold text-gray-900 dark:text-white">
+              Name this zone
+            </DialogTitle>
+            <DialogDescription className="text-[13px] text-gray-500">
+              Give this detection zone a name and choose a color.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-[12.5px] font-semibold text-gray-600 dark:text-gray-400">
+                Zone name <span className="text-red-500">*</span>
+              </Label>
+              <Input
                 ref={nameInputRef}
                 value={newZoneName}
                 onChange={(e) => setNewZoneName(e.target.value)}
-                style={styles.fieldInput}
-                placeholder="e.g. Seat A"
+                placeholder="e.g. Seat A, Entry Door"
                 maxLength={40}
+                className="h-10 rounded-xl border-gray-200 dark:border-border bg-white dark:bg-card text-gray-900 dark:text-white"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") saveZone();
                   if (e.key === "Escape") cancelNameModal();
                 }}
               />
-              <label style={{ ...styles.fieldLabel, marginTop: 12 }}>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-[12.5px] font-semibold text-gray-600 dark:text-gray-400">
                 Color
-              </label>
-              <div style={styles.colorRow}>
+              </Label>
+              <div className="flex items-center gap-2 flex-wrap">
                 {PRESET_COLORS.map((c) => (
-                  <span
+                  <button
                     key={c}
-                    style={{
-                      ...styles.colorChip,
-                      background: c,
-                      borderColor: newZoneColor === c ? "#fff" : "transparent",
-                    }}
                     onClick={() => setNewZoneColor(c)}
+                    className="w-6 h-6 rounded-md transition-all"
+                    style={{
+                      background: c,
+                      border: newZoneColor === c ? "2px solid white" : "2px solid transparent",
+                      boxShadow: newZoneColor === c ? `0 0 0 2px ${c}` : "none",
+                    }}
                   />
                 ))}
                 <input
                   type="color"
                   value={newZoneColor}
                   onChange={(e) => setNewZoneColor(e.target.value)}
-                  style={styles.colorPicker}
+                  className="w-7 h-7 rounded-md border-0 cursor-pointer bg-transparent p-0"
                   title="Custom color"
                 />
               </div>
-              {modalError && <div style={styles.modalError}>{modalError}</div>}
             </div>
-            <div style={styles.modalFooter}>
-              <button style={styles.btnGhost} onClick={cancelNameModal}>
-                Cancel
-              </button>
-              <button
-                style={{ ...styles.btnPrimary, opacity: saving ? 0.5 : 1 }}
-                disabled={saving}
-                onClick={saveZone}
-              >
-                {saving ? "Saving…" : "Save Zone"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* ── Delete confirm modal ─── */}
-      {deleteTarget && (
-        <div
-          style={styles.modalBackdrop}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setDeleteTarget(null);
-          }}
-        >
-          <div style={styles.modal}>
-            <div style={styles.modalTitle}>Delete Zone</div>
-            <div style={styles.modalBody}>
-              Delete zone <strong>"{deleteTarget.name}"</strong>? This cannot be
-              undone.
-            </div>
-            <div style={styles.modalFooter}>
-              <button
-                style={styles.btnGhost}
-                onClick={() => setDeleteTarget(null)}
-              >
-                Cancel
-              </button>
-              <button
-                style={{ ...styles.btnDanger, opacity: saving ? 0.5 : 1 }}
-                disabled={saving}
-                onClick={doDelete}
-              >
-                {saving ? "Deleting…" : "Delete"}
-              </button>
-            </div>
+            {modalError && (
+              <p className="text-[12px] text-red-500 flex items-center gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                {modalError}
+              </p>
+            )}
           </div>
-        </div>
-      )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={cancelNameModal} className="border-gray-200 dark:border-border">
+              Cancel
+            </Button>
+            <Button
+              onClick={saveZone}
+              disabled={saving}
+              className="font-semibold"
+              style={{ background: "linear-gradient(135deg, #2D3250 0%, #3d4a72 100%)" }}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              {saving ? "Saving..." : "Save Zone"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirm dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-[16px] font-bold text-gray-900 dark:text-white">
+              Delete Zone
+            </DialogTitle>
+            <DialogDescription className="text-[13px] text-gray-500">
+              Delete zone <strong className="text-gray-700 dark:text-gray-300">"{deleteTarget?.name}"</strong>? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} className="border-gray-200 dark:border-border">
+              Cancel
+            </Button>
+            <Button
+              onClick={doDelete}
+              disabled={saving}
+              variant="destructive"
+              className="font-semibold"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Trash2 className="h-4 w-4 mr-1" />}
+              {saving ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
-};
-
-// ── Inline styles (matches ManageZone.vue design) ────────────────────────────
-
-const styles: Record<string, React.CSSProperties> = {
-  root: {
-    display: "flex",
-    gap: 20,
-    alignItems: "flex-start",
-    fontFamily: "system-ui, sans-serif",
-    color: "#f1f5f9",
-  },
-  editorPanel: {
-    flex: 1,
-    minWidth: 0,
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-  },
-  editorHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  editorTitle: {
-    fontSize: 15,
-    fontWeight: 600,
-    color: "#f1f5f9",
-    lineHeight: 1.3,
-  },
-  editorSubtitle: {
-    fontSize: 11,
-    color: "#475569",
-    fontWeight: 400,
-  },
-  drawingBadge: {
-    position: "absolute" as const,
-    top: 10,
-    right: 10,
-    background: "rgba(245, 158, 11, 0.15)",
-    border: "1px solid #f59e0b",
-    color: "#f59e0b",
-    fontSize: 11,
-    fontWeight: 600,
-    padding: "4px 10px",
-    borderRadius: 20,
-    letterSpacing: "0.04em",
-  },
-  editorActions: {
-    display: "flex",
-    gap: 8,
-  },
-  canvasWrap: {
-    position: "relative",
-    width: "100%",
-    aspectRatio: "16 / 9",
-    background: "#0f172a",
-    borderRadius: 8,
-    overflow: "hidden",
-    border: "1px solid #334155",
-  },
-  snapshotImg: {
-    width: "100%",
-    height: "100%",
-    objectFit: "contain",
-    display: "block",
-    userSelect: "none",
-    pointerEvents: "none",
-  },
-  canvasPlaceholder: {
-    width: "100%",
-    height: "100%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  placeholderText: {
-    fontSize: 13,
-    color: "#475569",
-  },
-  zoneCanvas: {
-    position: "absolute",
-    inset: 0,
-    width: "100%",
-    height: "100%",
-  },
-  drawHint: {
-    fontSize: 12,
-    color: "#64748b",
-    padding: "2px 0",
-  },
-  hintActive: {
-    color: "#f59e0b",
-  },
-  sidebarPanel: {
-    width: 220,
-    flexShrink: 0,
-    display: "flex",
-    flexDirection: "column",
-    gap: 20,
-  },
-  sidebarSection: {
-    background: "#1e293b",
-    borderRadius: 10,
-    padding: 12,
-    display: "flex",
-    flexDirection: "column",
-    gap: 4,
-  },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: 600,
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
-    color: "#64748b",
-    marginBottom: 6,
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-  },
-  zoneCount: {
-    background: "#334155",
-    color: "#94a3b8",
-    fontSize: 11,
-    fontWeight: 600,
-    borderRadius: 10,
-    padding: "1px 6px",
-  },
-  emptyText: {
-    fontSize: 12,
-    color: "#475569",
-    padding: "4px 0",
-  },
-  camItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    width: "100%",
-    padding: "8px 10px",
-    borderRadius: 6,
-    fontSize: 13,
-    color: "#94a3b8",
-    background: "transparent",
-    border: "none",
-    cursor: "pointer",
-    textAlign: "left",
-  },
-  camItemActive: {
-    background: "#1d4ed8",
-    color: "#fff",
-  },
-  camDot: {
-    width: 6,
-    height: 6,
-    borderRadius: "50%",
-    background: "#475569",
-    flexShrink: 0,
-  },
-  camDotActive: {
-    background: "#93c5fd",
-  },
-  camName: {
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  zoneItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 4px",
-    borderRadius: 5,
-  },
-  zoneSwatch: {
-    width: 10,
-    height: 10,
-    borderRadius: 3,
-    flexShrink: 0,
-  },
-  zoneNameText: {
-    flex: 1,
-    fontSize: 13,
-    color: "#cbd5e1",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  zoneDel: {
-    background: "transparent",
-    border: "none",
-    color: "#475569",
-    fontSize: 11,
-    cursor: "pointer",
-    padding: "2px 4px",
-    borderRadius: 4,
-    lineHeight: 1,
-  },
-  btnPrimary: {
-    padding: "7px 14px",
-    background: "#3b82f6",
-    color: "#fff",
-    border: "none",
-    borderRadius: 7,
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: "pointer",
-  },
-  btnGhost: {
-    padding: "7px 14px",
-    background: "#1e293b",
-    color: "#94a3b8",
-    border: "1px solid #334155",
-    borderRadius: 7,
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: "pointer",
-  },
-  btnDanger: {
-    padding: "7px 14px",
-    background: "#dc2626",
-    color: "#fff",
-    border: "none",
-    borderRadius: 7,
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: "pointer",
-  },
-  modalBackdrop: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.6)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 100,
-  },
-  modal: {
-    background: "#1e293b",
-    border: "1px solid #334155",
-    borderRadius: 12,
-    width: 340,
-    padding: 24,
-    display: "flex",
-    flexDirection: "column",
-    gap: 16,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: 700,
-    color: "#f1f5f9",
-  },
-  modalBody: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-    fontSize: 14,
-    color: "#94a3b8",
-  },
-  fieldLabel: {
-    fontSize: 12,
-    fontWeight: 500,
-    color: "#64748b",
-    display: "block",
-    marginBottom: 4,
-  },
-  fieldInput: {
-    width: "100%",
-    background: "#0f172a",
-    border: "1px solid #334155",
-    borderRadius: 7,
-    padding: "8px 10px",
-    color: "#f1f5f9",
-    fontSize: 14,
-    outline: "none",
-    boxSizing: "border-box",
-  },
-  colorRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    flexWrap: "wrap",
-  },
-  colorChip: {
-    width: 22,
-    height: 22,
-    borderRadius: 5,
-    cursor: "pointer",
-    border: "2px solid transparent",
-    display: "inline-block",
-  },
-  colorPicker: {
-    width: 28,
-    height: 28,
-    border: "none",
-    borderRadius: 5,
-    padding: 0,
-    cursor: "pointer",
-    background: "transparent",
-  },
-  modalError: {
-    fontSize: 12,
-    color: "#f87171",
-    marginTop: 4,
-  },
-  modalFooter: {
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: 8,
-  },
 };
 
 export default ManageZone;
