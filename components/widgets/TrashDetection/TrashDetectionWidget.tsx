@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
-import { getAiServiceBaseUrl } from "@/lib/utils/ai-service";
+import { getAiServiceBaseUrl, getAiServiceWsUrl } from "@/lib/utils/ai-service";
 import {
     Trash2,
     Loader2,
@@ -156,8 +156,7 @@ export const TrashDetectionWidget = ({ config, isEditMode = false }: Props) => {
         fetchScannerStatus();
 
         // WebSocket for real-time updates
-        const aiBase = getAiServiceBaseUrl();
-        const wsUrl = aiBase.replace("http", "ws") + "/ws/frontend";
+        const wsUrl = getAiServiceWsUrl() + "/ws/frontend";
         let ws: WebSocket;
 
         const connectWs = () => {

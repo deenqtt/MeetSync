@@ -52,13 +52,10 @@ const TOKEN = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const getAiHost = () => {
-  const host = process.env.NEXT_PUBLIC_AI_SERVICE_HOST;
-  const port = process.env.NEXT_PUBLIC_AI_SERVICE_PORT || "8567";
-  if (host) return `${host}:${port}`;
-  if (typeof window !== "undefined") return `${window.location.hostname}:${port}`;
-  return `10.8.0.82:${port}`;
-};
+const AI_PORT = process.env.NEXT_PUBLIC_AI_SERVICE_PORT || "8567";
+// HTTP → proxy (same-origin, no CORS). WS → direct via window.location.hostname.
+const getAiWsHost = () =>
+  typeof window !== "undefined" ? `${window.location.hostname}:${AI_PORT}` : `localhost:${AI_PORT}`;
 
 const fetchWithTimeout = async (
   url: string,
@@ -86,12 +83,12 @@ function RtspStreamPlayer({ cameraId, name }: { cameraId: string; name: string }
   const wsRef = useRef<WebSocket | null>(null);
   const destroyedRef = useRef(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const aiHost = getAiHost();
+  const aiWsHost = getAiWsHost();
 
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const res = await fetchWithTimeout(`http://${aiHost}/api/stream/status`);
+        const res = await fetchWithTimeout(`/api/ai-proxy/api/stream/status`);
         if (res?.ok) {
           const data = await res.json();
           const cam = data?.cameras?.[cameraId];
@@ -100,14 +97,14 @@ function RtspStreamPlayer({ cameraId, name }: { cameraId: string; name: string }
       } catch { /* ignore */ }
     };
     fetchStatus();
-  }, [aiHost, cameraId]);
+  }, [cameraId]);
 
   useEffect(() => {
     destroyedRef.current = false;
 
     const connect = () => {
       if (destroyedRef.current) return;
-      const ws = new WebSocket(`ws://${aiHost}/ws/stream`);
+      const ws = new WebSocket(`ws://${aiWsHost}/ws/stream`);
       wsRef.current = ws;
 
       ws.onmessage = (event) => {
@@ -145,7 +142,7 @@ function RtspStreamPlayer({ cameraId, name }: { cameraId: string; name: string }
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       wsRef.current?.close();
     };
-  }, [aiHost, cameraId]);
+  }, [aiWsHost, cameraId]);
 
   return (
     <div className="relative w-full aspect-video bg-gray-950 rounded-t-2xl overflow-hidden flex items-center justify-center">
@@ -202,8 +199,7 @@ export default function CctvPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const aiHost = getAiHost();
-      const res = await fetchWithTimeout(`http://${aiHost}/api/cameras`);
+      const res = await fetchWithTimeout(`/api/ai-proxy/api/cameras`);
       if (res?.ok) {
         const data = await res.json();
         setCameras(Array.isArray(data?.cameras) ? data.cameras : []);
@@ -234,8 +230,7 @@ export default function CctvPage() {
     }
     setIsSubmitting(true);
     try {
-      const aiHost = getAiHost();
-      const res = await fetch(`http://${aiHost}/api/cameras`, {
+      const res = await fetch(`/api/ai-proxy/api/cameras`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ camera_name: formData.name, rtsp_url: formData.rtspUrl }),
@@ -257,8 +252,7 @@ export default function CctvPage() {
     const cam = cameraToDelete;
     setCameraToDelete(null);
     try {
-      const aiHost = getAiHost();
-      const res = await fetch(`http://${aiHost}/api/cameras/${cam.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/ai-proxy/api/cameras/${cam.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete camera");
       showToast.success(`Camera "${cam.camera_name}" deleted`);
       load();

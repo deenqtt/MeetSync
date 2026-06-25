@@ -47,16 +47,6 @@ export const AiCctvStreamConfigModal = ({
     const [aiCameras, setAiCameras] = useState<any[]>([]);
     const [isLoadingCameras, setIsLoadingCameras] = useState(false);
 
-    const getAiHost = () => {
-        const host = process.env.NEXT_PUBLIC_AI_SERVICE_HOST;
-        const port = process.env.NEXT_PUBLIC_AI_SERVICE_PORT || "8567";
-
-        if (host) return `${host}:${port}`;
-        if (typeof window !== "undefined") {
-            return `${window.location.hostname}:${port}`;
-        }
-        return `10.8.0.82:${port}`;
-    };
 
     useEffect(() => {
         if (isOpen) {
@@ -81,8 +71,7 @@ export const AiCctvStreamConfigModal = ({
     const fetchAiCameras = async () => {
         setIsLoadingCameras(true);
         try {
-            const host = getAiHost();
-            const response = await fetch(`http://${host}/api/cameras`);
+            const response = await fetch(`/api/ai-proxy/api/cameras`);
             if (response.ok) {
                 const data = await response.json();
                 setAiCameras(data.cameras || []);
@@ -113,7 +102,7 @@ export const AiCctvStreamConfigModal = ({
         }
 
         const finalStreamUrl = streamType === "ai"
-            ? `http://${getAiHost()}/api/cameras/${cameraId}/snapshot`
+            ? `/api/ai-proxy/api/cameras/${cameraId}/snapshot`
             : streamUrl.trim();
 
         onSave({

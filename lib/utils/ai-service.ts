@@ -1,37 +1,26 @@
+const AI_PORT = process.env.NEXT_PUBLIC_AI_SERVICE_PORT || "8567";
+
 /**
- * AI Service URL helpers.
- *
- * Priority:
- *  1. NEXT_PUBLIC_AI_SERVICE_HOST env var  (set at build time — recommended for prod)
- *  2. "localhost"                           (safe fallback for both dev & prod co-located)
- *
- * NOTE: window.location.hostname is intentionally NOT used here because it breaks
- * when the web app and AI service run on different hosts, and it cannot be used
- * server-side (API routes, scheduler).
- *
- * For dev: set NEXT_PUBLIC_AI_SERVICE_HOST in .env (already set to 192.168.2.133)
- * For prod: set NEXT_PUBLIC_AI_SERVICE_HOST="localhost" if co-located, or the actual IP
+ * HTTP calls go through the Next.js proxy (/api/ai-proxy/...).
+ * Avoids CORS and fixes the "localhost = user's machine" problem when
+ * accessing the app from another device on the LAN.
  */
-
-function getHost(): string {
-    return process.env.NEXT_PUBLIC_AI_SERVICE_HOST || "localhost";
-}
-
-function getPort(): string {
-    return process.env.NEXT_PUBLIC_AI_SERVICE_PORT || "8567";
-}
-
-/** Returns base HTTP URL, e.g. http://192.168.2.133:8567 */
 export function getAiServiceBaseUrl(): string {
-    return `http://${getHost()}:${getPort()}`;
+  return "/api/ai-proxy";
 }
 
-/** Returns base WebSocket URL, e.g. ws://192.168.2.133:8567 */
+/**
+ * WebSocket must be a direct browser connection (can't proxy via HTTP route).
+ * Uses window.location.hostname so it resolves to the correct server IP
+ * regardless of how the user accesses the app.
+ */
 export function getAiServiceWsUrl(): string {
-    return `ws://${getHost()}:${getPort()}`;
+  if (typeof window === "undefined") return `ws://localhost:${AI_PORT}`;
+  return `ws://${window.location.hostname}:${AI_PORT}`;
 }
 
-/** Returns host:port string (no protocol), e.g. 192.168.2.133:8567 */
+/** host:port for display/label purposes only */
 export function getAiServiceHost(): string {
-    return `${getHost()}:${getPort()}`;
+  if (typeof window === "undefined") return `localhost:${AI_PORT}`;
+  return `${window.location.hostname}:${AI_PORT}`;
 }

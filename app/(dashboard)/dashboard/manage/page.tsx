@@ -130,7 +130,7 @@ export default function ManageDashboardPage() {
     setLayout((prev) => [
       ...prev,
       {
-        id: crypto.randomUUID(),
+        id: `w-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         widgetType: meta.type,
         x: 0,
         y: 9999, // large finite so JSON.stringify keeps it valid (Infinity → null)
