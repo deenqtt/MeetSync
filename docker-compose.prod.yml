@@ -1,0 +1,15 @@
+# Taruh file ini di server: /home/gspe/meetsync/docker-compose.yml
+# network_mode: host → container pakai network host langsung
+# DATABASE_URL bisa tetap pakai localhost (Postgres jalan di host)
+
+services:
+  meetsync:
+    image: ghcr.io/gspetech/meetsync:latest
+    network_mode: host        # akses localhost = host machine
+    env_file: .env            # /home/gspe/meetsync/.env
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
